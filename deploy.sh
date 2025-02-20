@@ -1,4 +1,7 @@
 #!/bin/bash
+# Execute this script with:
+# chmod +x deploy.sh && ./deploy.sh
+
 
 # Configuration
 PROJECT_ID="book-translator-439914"  # Your GCP project ID

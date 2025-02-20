@@ -11,7 +11,6 @@ async function downloadAndUploadImage(imageUrl, fileName) {
             console.error('❌ GCS configuration missing');
             return imageUrl; // Fallback to original URL
         }
-
         // Check if image already exists in GCS
         const file = bucket.file(fileName);
         const [exists] = await file.exists();
@@ -178,22 +177,34 @@ async function handleSync(req) {
 
         console.log(`📚 Processing batch at offset ${offset}${forceSync ? ' (Force sync enabled)' : ''}`);
 
-        // Get existing articles first for comparison
-        const existingArticles = await prisma.articleList.findMany({
-            select: {
-                slug: true,
-                updatedAt: true,
-                image: true,
-                myImageUrl: true,
-                html: true,
-                outline: true,
-                markdown: true
-            }
+        // Initialize BlogClient with WebSocket disabled
+        const client = new BlogClient(process.env.SEOBOT_API_KEY, {
+            apiUrl: 'https://app.seobotai.com/api',
+            useWebSocket: false // Disable WebSocket to avoid buffer issues
         });
 
-        const client = new BlogClient(process.env.SEOBOT_API_KEY, {
-            apiUrl: 'https://app.seobotai.com/api'
-        });
+        // Get existing articles first for comparison
+        let existingArticles = [];
+        try {
+            existingArticles = await prisma.articleList.findMany({
+                select: {
+                    slug: true,
+                    updatedAt: true,
+                    image: true,
+                    myImageUrl: true,
+                    html: true,
+                    outline: true,
+                    markdown: true
+                }
+            });
+            console.log(`📚 Found ${existingArticles.length} existing articles`);
+        } catch (error) {
+            console.error('❌ Error fetching existing articles:', error);
+            return NextResponse.json({
+                success: false,
+                error: 'Failed to fetch existing articles'
+            }, { status: 500 });
+        }
 
         // Get total count if this is the first batch
         let totalArticles = 0;
@@ -212,14 +223,23 @@ async function handleSync(req) {
         }
 
         // Fetch and process current batch
-        const response = await client.getArticles(offset, BATCH_SIZE);
-        if (!response.articles?.length) {
-            console.log('✅ All articles processed');
+        let response;
+        try {
+            response = await client.getArticles(offset, BATCH_SIZE);
+            if (!response?.articles?.length) {
+                console.log('✅ All articles processed');
+                return NextResponse.json({
+                    success: true,
+                    completed: true,
+                    message: 'All articles have been processed'
+                });
+            }
+        } catch (error) {
+            console.error('❌ Error fetching articles:', error);
             return NextResponse.json({
-                success: true,
-                completed: true,
-                message: 'All articles have been processed'
-            });
+                success: false,
+                error: 'Failed to fetch articles'
+            }, { status: 500 });
         }
 
         const result = await processArticleBatch(response.articles, client, existingArticles, forceSync);
@@ -229,10 +249,22 @@ async function handleSync(req) {
             const nextOffset = offset + BATCH_SIZE;
             const nextBatchUrl = new URL('/api/blog-sync', baseUrl);
             nextBatchUrl.searchParams.set('offset', nextOffset.toString());
+            if (forceSync) {
+                nextBatchUrl.searchParams.set('force', 'true');
+            }
 
             // Trigger next batch asynchronously
-            fetch(nextBatchUrl, { method: 'POST' })
-                .catch(error => console.error('Failed to trigger next batch:', error));
+            try {
+                await fetch(nextBatchUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            } catch (error) {
+                console.error('⚠️ Failed to trigger next batch:', error);
+                // Continue processing despite the error
+            }
 
             // Revalidate if needed
             if (!result.skipped) {
@@ -261,7 +293,7 @@ async function handleSync(req) {
         console.error("❌ Sync Error:", error);
         return NextResponse.json({
             success: false,
-            error: error.message
+            error: error?.message || 'Unknown error occurred'
         }, { status: 500 });
     }
 }
