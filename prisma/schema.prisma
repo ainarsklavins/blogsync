@@ -1,0 +1,110 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_NON_POOLING")
+}
+
+model RawUploads {
+  id            String         @id @default(cuid())
+  createdAt     DateTime       @default(now())
+  fileUrl       String
+  fileName      String
+  shortFileName String
+  fileSize      Int
+  rawName       String
+  tokenCount    Int
+  translations  Translations[]
+  consentLogs   ConsentLogs[]
+}
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  createdAt    DateTime       @default(now())
+  payments     Payments[]
+  translations Translations[]
+}
+
+model Payments {
+  id              String       @id @default(cuid())
+  translationId   String
+  userEmail       String
+  amount          Float
+  isSuccessful    Boolean      @default(false)
+  stripeSessionId String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  translation     Translations @relation(fields: [translationId], references: [id])
+  user            User         @relation(fields: [userEmail], references: [email])
+
+  @@index([translationId])
+  @@index([userEmail])
+}
+
+model Translations {
+  id             String     @id @default(cuid())
+  userEmail      String
+  uploadedFileId String
+  targetLang     String
+  startedAt      DateTime   @default(now())
+  status         String     @default("pending")
+  finishedAt     DateTime?
+  finishStatus   String?
+  translatedFile String?
+  emailSent      Boolean    @default(false)
+  selectedPlan   String?
+  costToUs       Float?
+  priceForUser   Float?
+  payment        Payments[]
+  uploadedFile   RawUploads @relation(fields: [uploadedFileId], references: [id])
+  user           User       @relation(fields: [userEmail], references: [email])
+}
+
+model SystemState {
+  id                  String    @id @default(cuid())
+  isProcessing        Boolean   @default(false)
+  updatedAt           DateTime  @updatedAt
+  lastProcessedAt     DateTime?
+  processingStartedAt DateTime?
+}
+
+model ConsentLogs {
+  id           String     @id @default(cuid())
+  createdAt    DateTime   @default(now())
+  ipAddress    String
+  fileName     String
+  fileSize     Int
+  consentGiven Boolean    @default(true)
+  userEmail    String?
+  rawUploadId  String
+  rawUpload    RawUploads @relation(fields: [rawUploadId], references: [id])
+
+  @@index([ipAddress])
+  @@index([rawUploadId])
+}
+
+model ArticleList {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  headline        String
+  metaDescription String?
+  metaKeywords    String?
+  html            String
+  markdown        String?
+  outline         String?
+  published       Boolean  @default(false)
+  publishedAt     DateTime
+  updatedAt       DateTime @updatedAt
+  image           Json?
+  myImageUrl      String?
+  tags            Json?
+  category        Json?
+  readingTime     Int?
+  blog            Json?
+  relatedPosts    Json?
+}
