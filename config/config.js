@@ -139,7 +139,7 @@ export const llmConfig = {
     }
 };
 
-export const TARGET_LANGUAGES = ['en', 'fr', 'de', 'es', 'it', 'pt', 'pt-br', 'zh', 'ru', 'nl', 'pl', 'sv', 'ko', 'ar', 'hi'];
+export const TARGET_LANGUAGES = ['zh', 'ru', 'ko', 'ar', 'hi', 'en', 'fr', 'de', 'es', 'it', 'pt', 'pt-br', 'nl', 'pl', 'sv'];
 
 export const MINIMUM_PRICES = {
     basic: 5.99,
