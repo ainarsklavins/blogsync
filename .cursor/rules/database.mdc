@@ -1,0 +1,13 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Database Guidelines
+
+- Uses Prisma ORM with Neondb for all database operations
+- Database client is configured in [lib/prisma.js](mdc:lib/prisma.js)
+- Schema and migrations are in the `prisma/` directory
+- Always use the Prisma client for database access
+- Follow established query patterns and robust error handling
+- All SeoBot articles must be stored and indexed for SEO optimization

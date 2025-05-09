@@ -1,0 +1,12 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Performance Guidelines
+
+- Use React Server Components by default; only use 'use client' when necessary
+- Implement dynamic loading for non-critical components
+- Optimize images using WebP format with size data and lazy loading
+- Focus on Core Web Vitals (LCP, CLS, FID)
+- Use proper caching strategies for API and static assets

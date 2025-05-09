@@ -1,0 +1,15 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# UI/Component Guidelines
+
+- Use Shadcn UI and Radix components for UI
+- Tailwind CSS for mobile-first, responsive design
+- Implement error and loading states for all data fetching
+- Use descriptive variable names (e.g., isLoading, hasError)
+- Avoid magic numbers; use named constants
+- Include emoji console logs for debugging
+- Use functional programming and avoid classes
+- Follow modular design for maintainability

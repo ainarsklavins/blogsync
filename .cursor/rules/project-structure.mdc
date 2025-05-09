@@ -1,0 +1,20 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Project Structure Guide
+
+This project is a Next.js v15 application. Its core goal is to sync SeoBot generated articles, accessed via API, to the database for optimized SEO content management.
+
+- `app/`: Main application code, including pages, layouts, and API routes
+- `lib/`: Shared utilities (e.g., [prisma.js](mdc:lib/prisma.js) for database, [GCS.js](mdc:lib/GCS.js) for Google Cloud Storage)
+- `prisma/`: Prisma schema and migrations
+- `config/`: Configuration files
+- `public/`: Static assets
+
+Key configuration files:
+- [next.config.mjs](mdc:next.config.mjs): Next.js config
+- [tailwind.config.mjs](mdc:tailwind.config.mjs): Tailwind CSS config
+- [postcss.config.mjs](mdc:postcss.config.mjs): PostCSS config
+- [jsconfig.json](mdc:jsconfig.json): JS config

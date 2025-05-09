@@ -1,0 +1,13 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Deployment Guidelines
+
+- The application is deployed on Google Cloud Run
+- Always dockerize the application using the provided Dockerfile
+- Push Docker images to Google Container Registry (GCR) for deployment
+- Ensure all environment variables and secrets are securely managed using Google Cloud best practices
+- Follow security-first approach for all deployment steps
+- Test Docker builds locally before pushing to GCR

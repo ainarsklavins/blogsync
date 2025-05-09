@@ -1,0 +1,12 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# SeoBot Article Sync Rule
+
+- The core project goal is to sync SeoBot generated articles, accessed via API, to the database
+- All articles must be fetched from the SeoBot API and stored using Prisma ORM
+- Ensure robust error handling and logging for all sync operations
+- No mock data or fallbacks; show errors if data is unavailable
+- Articles must be indexed and optimized for SEO in the database

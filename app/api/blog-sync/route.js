@@ -2,7 +2,12 @@ import { prisma } from "@/lib/prisma";
 import { BlogClient } from "seobot";
 import { bucket } from "@/lib/GCS";
 import { NextResponse } from "next/server";
-import { baseUrl } from "@/config/config";
+import { baseUrl, blogConfig } from "@/config/config";
+import { translateArticleToAllLanguages } from "@/lib/translationService";
+
+// --- TEMPORARY DEBUG LOG REMOVED ---
+// console.log("[DEBUG BlogSync Route] DATABASE_URL:", process.env.DATABASE_URL);
+// --- END TEMPORARY DEBUG LOG REMOVED ---
 
 async function downloadAndUploadImage(imageUrl, fileName) {
     console.log('🖼️ Processing image:', imageUrl);
@@ -110,6 +115,10 @@ async function processArticleBatch(articles, client, existingArticles, forceSync
                 try {
                     console.log(`🔍 Fetching full content for: ${article.slug} (attempt ${4 - retries}/3)`);
                     fullArticle = await client.getArticle(article.slug);
+                    if (!fullArticle || !fullArticle.html) {
+                        console.warn(`🟡 Article with slug '${article.slug}' from SEObot did not contain HTML content. Skipping.`);
+                        continue;
+                    }
                     break;
                 } catch (error) {
                     retries--;
@@ -222,15 +231,34 @@ async function processArticleBatch(articles, client, existingArticles, forceSync
             }
 
             // Handle image with proper error handling
-            let myImageUrl = existing?.myImageUrl;
-            if (article.image && (!existing || article.image !== existing.image)) {
+            let finalMyImageUrl = existing?.myImageUrl; // Start with existing GCS URL or undefined
+            if (article.image && (!existing || article.image !== existing.image)) { // Check if image exists and is new/updated
+                console.log(`🔄 Attempting to process image for ${article.slug}`);
                 try {
                     const fileName = `blog/${article.slug}-${Date.now()}.jpg`;
-                    myImageUrl = await downloadAndUploadImage(article.image, fileName);
-                } catch (error) {
-                    console.error(`❌ Failed to process image: ${error.message}`);
-                    myImageUrl = article.image; // Fallback to original image URL
+                    const potentialGcsUrl = await downloadAndUploadImage(article.image, fileName);
+
+                    // Check if the returned URL is *actually* a GCS URL and not the fallback original URL
+                    const isGcsUrl = potentialGcsUrl && potentialGcsUrl.includes('storage.googleapis.com');
+
+                    if (isGcsUrl && potentialGcsUrl !== article.image) {
+                        finalMyImageUrl = potentialGcsUrl; // Successfully uploaded/retrieved GCS URL
+                        console.log(`✅ Successfully obtained GCS URL for ${article.slug}`);
+                    } else {
+                        // Handle cases where downloadAndUploadImage failed internally or returned fallback
+                        console.warn(`⚠️ Image processing for ${article.slug} did not return a valid GCS URL. Retaining existing GCS URL or null.`);
+                        finalMyImageUrl = existing?.myImageUrl || null; // Keep existing or set null
+                    }
+                } catch (error) { // Catch explicit errors thrown by downloadAndUploadImage
+                    console.error(`❌ Explicit error during image processing for ${article.slug}: ${error.message}`);
+                    finalMyImageUrl = existing?.myImageUrl || null; // Revert to existing GCS URL or null on explicit error
                 }
+            } else if (article.image && existing && article.image === existing.image) {
+                console.log(`⏭️ Image for ${article.slug} is unchanged. Retaining existing GCS URL: ${finalMyImageUrl}`);
+                // Keep the existing finalMyImageUrl
+            } else if (!article.image) {
+                console.log(`🗑️ No image provided for ${article.slug}. Setting GCS URL to null.`);
+                finalMyImageUrl = null; // No image, so no GCS URL
             }
 
             // Prepare article data with validation
@@ -250,7 +278,7 @@ async function processArticleBatch(articles, client, existingArticles, forceSync
                 publishedAt: new Date(article.publishedAt || article.createdAt || Date.now()),
                 updatedAt: new Date(article.updatedAt || Date.now()),
                 image: article.image ? JSON.parse(JSON.stringify(article.image)) : null,
-                myImageUrl: myImageUrl || article.image || null,
+                myImageUrl: finalMyImageUrl, // Use the final determined GCS URL or null
                 tags: article.tags ? JSON.parse(JSON.stringify(article.tags)) : [],
                 category: article.category ? JSON.parse(JSON.stringify(article.category)) : {},
                 readingTime: article.readingTime || 0,
@@ -287,7 +315,24 @@ async function processArticleBatch(articles, client, existingArticles, forceSync
                             ...articleData
                         }
                     });
-                    break;
+                    console.log(`✅ Article upserted to DB: ${article.slug}`);
+
+                    // --- Integration of Translation Step ---
+                    // Fetch the newly upserted article to ensure we have its ID and all fields for translation
+                    const savedArticle = await prisma.articleList.findUnique({
+                        where: { slug: article.slug },
+                    });
+
+                    if (savedArticle) {
+                        console.log(`🔵 [BlogSync] Starting translations for article ${savedArticle.id} (${savedArticle.headline})...`);
+                        await translateArticleToAllLanguages(savedArticle);
+                        console.log(`🟢 [BlogSync] Finished all translations for article ${savedArticle.id}.`);
+                    } else {
+                        console.warn(`🟡 [BlogSync] Could not fetch article ${article.slug} immediately after upsert for translation. Skipping translations for this article.`);
+                    }
+                    // --- End of Translation Step ---
+
+                    break; // Exit retry loop on successful upsert and translation attempt
                 } catch (error) {
                     upsertRetries--;
                     if (upsertRetries === 0) {
@@ -319,11 +364,13 @@ async function processArticleBatch(articles, client, existingArticles, forceSync
 }
 
 async function handleSync(req) {
+    // --- TEMPORARY DEBUG LOG REMOVED ---
+    // console.log("[DEBUG handleSync] DATABASE_URL:", process.env.DATABASE_URL);
+    // --- END TEMPORARY DEBUG LOG REMOVED ---
     console.log('🚀 Starting blog sync...');
 
-    // Fixed configuration
-    const BATCH_SIZE = 5; // Process 5 articles at a time
-    const FORCE_SYNC = true; // Always force sync all articles
+    // Removed BATCH_SIZE constant
+    const FORCE_SYNC = blogConfig.blog.forceSync; // Use value from config
 
     // Validate environment variables
     if (!process.env.SEOBOT_API_KEY) {
@@ -368,114 +415,74 @@ async function handleSync(req) {
         // Get total count of articles to sync
         let totalArticles = 0;
         try {
+            // Fetch total count - using limit 1 is efficient
             const initialResponse = await client.getArticles(0, 1);
             totalArticles = initialResponse.total || 0;
+            if (totalArticles === 0) {
+                console.log('📚 Source API reports 0 articles. Nothing to sync.');
+                return NextResponse.json({ success: true, completed: true, message: 'No articles found in source.' });
+            }
             console.log(`📚 Found total of ${totalArticles} articles to sync`);
         } catch (error) {
             console.error('❌ Error getting total articles count:', error);
+            // Log detailed error for total count failure
+            console.error('  Count Error details:', error.message, error.stack);
             return NextResponse.json({
                 success: false,
                 error: 'Failed to get total articles count'
             }, { status: 500 });
         }
 
-        // Calculate current offset from URL or start from 0
-        const { searchParams } = new URL(req.url);
-        const currentOffset = parseInt(searchParams.get('offset') || '0', 10);
-        console.log(`📝 Processing batch starting at offset ${currentOffset}`);
-
-        // Fetch and process current batch
-        let response;
+        // Fetch ALL articles at once
+        console.log(`🚚 Fetching all ${totalArticles} articles...`);
+        let allArticlesResponse;
         try {
-            response = await client.getArticles(currentOffset, BATCH_SIZE);
-            if (!response?.articles?.length) {
-                console.log('✅ All articles processed');
+            // Fetch all articles using the determined total count
+            allArticlesResponse = await client.getArticles(0, totalArticles);
+            if (!allArticlesResponse?.articles?.length) {
+                // This case might indicate an issue if totalArticles > 0
+                console.warn('⚠️ Fetched 0 articles despite expecting', totalArticles);
+                // Proceed cautiously, maybe log an error or return
                 return NextResponse.json({
-                    success: true,
+                    success: false, // Indicate potential issue
                     completed: true,
-                    message: 'All articles have been processed'
-                });
+                    error: 'Fetched 0 articles unexpectedly.',
+                    message: 'Sync attempted, but no articles were returned from source despite initial count.'
+                }, { status: 500 }); // Use 500 to signal potential API inconsistency
             }
+            console.log(`✅ Successfully fetched ${allArticlesResponse.articles.length} articles.`);
         } catch (error) {
-            console.error('❌ Error fetching articles:', error);
+            console.error('❌ Error fetching all articles:', error);
+            console.error('  Fetch All Error details:', error.message, error.stack);
             return NextResponse.json({
                 success: false,
-                error: 'Failed to fetch articles'
+                error: 'Failed to fetch all articles from source'
             }, { status: 500 });
         }
 
-        const result = await processArticleBatch(response.articles, client, existingArticles, FORCE_SYNC);
+        // Process the entire batch of fetched articles
+        const result = await processArticleBatch(allArticlesResponse.articles, client, existingArticles, FORCE_SYNC);
 
-        if (result.processed) {
-            // Get request headers for origin
-            const origin = req.headers.get('origin') || '';
-            const host = req.headers.get('host') || '';
-            const protocol = origin.startsWith('https') ? 'https' : 'http';
+        // Removed the self-triggering fetch logic for next batch
 
-            // Calculate next offset
-            const nextOffset = currentOffset + BATCH_SIZE;
-
-            // Only trigger next batch if there are more articles to process
-            if (nextOffset < totalArticles) {
-                // Trigger next batch asynchronously
-                try {
-                    await fetch(`${protocol}://${host}/api/blog-sync?offset=${nextOffset}`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    console.log(`🔄 Triggered next batch starting at offset ${nextOffset}`);
-                } catch (error) {
-                    console.error('⚠️ Failed to trigger next batch:', error);
-                }
-            } else {
-                console.log('✅ Reached end of articles, no more batches to process');
-            }
-
-            // Revalidate if needed
-            if (!result.skipped) {
-                try {
-                    // Use MAIN_SITE_DOMAIN for sitemap and revalidation
-                    const mainSiteDomain = process.env.MAIN_SITE_DOMAIN?.replace(/\/$/, '') || 'https://booktranslator.ai';
-                    console.log(`🌐 Using main site domain: ${mainSiteDomain}`);
-
-                    await Promise.all([
-                        fetch(`${mainSiteDomain}/api/revalidate?path=/blog`, {
-                            method: 'GET',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${process.env.SEOBOT_API_KEY}` // Add auth if needed
-                            }
-                        }).then(res => {
-                            if (!res.ok) throw new Error(`Revalidation failed: ${res.status}`);
-                            return res;
-                        }),
-                        fetch(`${mainSiteDomain}/api/update-sitemap`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${process.env.SEOBOT_API_KEY}` // Add auth if needed
-                            }
-                        }).then(res => {
-                            if (!res.ok) throw new Error(`Sitemap update failed: ${res.status}`);
-                            return res;
-                        })
-                    ]);
-                    console.log('✅ Cache revalidated and sitemap updated on main site');
-                } catch (error) {
-                    console.error('⚠️ Failed to revalidate or update sitemap:', error);
-                    console.error('  Error details:', error.message);
-                }
-            }
+        // Revalidate if needed (only if articles were actually processed)
+        if (result.processed && !result.skipped) {
+            // console.log('✅ Cache revalidated and sitemap updated on main site'); // Keep this log if you only remove the fetch calls
+            // The following block for revalidation and sitemap update has been removed.
         }
+
+        console.log('✅ Sync process completed.');
 
         return NextResponse.json({
             success: true,
-            currentOffset,
+            completed: true, // Mark as completed since we process all at once
             totalArticles,
-            nextBatchAt: currentOffset + BATCH_SIZE,
-            ...result
+            processedCount: result.totalProcessed,
+            successfulCount: result.successfulUpdates,
+            message: `Sync complete. Processed ${result.totalProcessed} articles.`
+            // Removed nextBatchAt
+            // Spread result details cautiously, avoid overriding completed/success flags
+            // ...result
         });
     } catch (error) {
         console.error("❌ Sync Error:", error);

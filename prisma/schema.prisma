@@ -18,8 +18,8 @@ model RawUploads {
   fileSize      Int
   rawName       String
   tokenCount    Int
-  translations  Translations[]
   consentLogs   ConsentLogs[]
+  translations  Translations[]
 }
 
 model User {
@@ -32,13 +32,13 @@ model User {
 
 model Payments {
   id              String       @id @default(cuid())
-  translationId   String
   userEmail       String
   amount          Float
   isSuccessful    Boolean      @default(false)
+  translationId   String
+  updatedAt       DateTime     @updatedAt
   stripeSessionId String?
   createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
   translation     Translations @relation(fields: [translationId], references: [id])
   user            User         @relation(fields: [userEmail], references: [email])
 
@@ -55,12 +55,14 @@ model Translations {
   status         String     @default("pending")
   finishedAt     DateTime?
   finishStatus   String?
-  translatedFile String?
   emailSent      Boolean    @default(false)
-  selectedPlan   String?
+  translatedFile String?
   costToUs       Float?
   priceForUser   Float?
+  selectedPlan   String?
+  locale         String     @default("en")
   payment        Payments[]
+  TaskLogs       TaskLogs[]
   uploadedFile   RawUploads @relation(fields: [uploadedFileId], references: [id])
   user           User       @relation(fields: [userEmail], references: [email])
 }
@@ -89,17 +91,17 @@ model ConsentLogs {
 }
 
 model ArticleList {
-  id              String   @id @default(cuid())
-  slug            String   @unique
+  id              String               @id @default(cuid())
+  slug            String               @unique
   headline        String
   metaDescription String?
   metaKeywords    String?
   html            String
   markdown        String?
   outline         String?
-  published       Boolean  @default(false)
+  published       Boolean              @default(false)
   publishedAt     DateTime
-  updatedAt       DateTime @updatedAt
+  updatedAt       DateTime             @updatedAt
   image           Json?
   myImageUrl      String?
   tags            Json?
@@ -107,4 +109,65 @@ model ArticleList {
   readingTime     Int?
   blog            Json?
   relatedPosts    Json?
+  translations    ArticleTranslation[]
+}
+
+model TaskLogs {
+  id              String       @id
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime
+  taskName        String       @unique
+  taskType        String
+  status          String
+  statusChangedAt DateTime     @default(now())
+  payload         Json?
+  result          Json?
+  errorMessage    String?
+  translationId   String
+  retryCount      Int          @default(0)
+  Translations    Translations @relation(fields: [translationId], references: [id])
+
+  @@index([createdAt])
+  @@index([status])
+  @@index([taskName])
+  @@index([translationId])
+}
+
+model ArticleTranslation {
+  id        String @id @default(cuid())
+  articleId String
+  language  String // e.g., 'en', 'fr', 'de'
+
+  // Mirrored fields from ArticleList - some will be translated, some copied
+  slug            String
+  headline        String
+  metaDescription String?
+  metaKeywords    String?
+  html            String
+  markdown        String?
+  outline         String?
+
+  image      Json? // Copied from original article. Image URLs are not translated.
+  myImageUrl String? // Copied from original GCS URL.
+
+  tags         Json? // Placeholder: Copied or default. Actual translation of titles within JSON is a further step.
+  category     Json? // Placeholder: Copied or default.
+  readingTime  Int? // Copied from original.
+  blog         Json? // Placeholder: Copied or default.
+  relatedPosts Json? // Placeholder: Copied or default. Headlines/excerpts within may need translation in a further step.
+
+  published   Boolean   @default(false) // Translations may have their own publishing cycle
+  publishedAt DateTime? // Publication date of the translation itself
+
+  status    String // e.g., PENDING_TRANSLATION, TRANSLATED, ERROR_TRANSLATING
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  article   ArticleList @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, language])
+  @@index([articleId])
+  @@index([language])
+  @@index([status])
+  @@index([slug]) // If you intend to query by translated slug
+  @@index([published])
 }

@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "ArticleTranslation" ALTER COLUMN "headline" DROP DEFAULT,
+ALTER COLUMN "html" DROP DEFAULT,
+ALTER COLUMN "slug" DROP DEFAULT;

@@ -1,0 +1,11 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Storage Guidelines
+
+- All file storage must use Google Cloud Storage (GCS)
+- Storage utilities are in [lib/GCS.js](mdc:lib/GCS.js)
+- Never use server file storage; always use the Google Cloud bucket
+- Implement robust error handling for all storage operations
