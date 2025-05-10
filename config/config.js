@@ -183,7 +183,7 @@ export const blogConfig = {
             { slug: "updates", title: "Product Updates" },
             { slug: "guides", title: "Translation Guides" }
         ],
-        forceSync: true,
+        forceSync: false,
     },
 
     // SEO and metadata
