@@ -54,7 +54,6 @@ docker buildx build --platform linux/amd64 \
   --build-arg GCS_CLIENT_EMAIL="$GCS_CLIENT_EMAIL" \
   --build-arg GCS_PRIVATE_KEY="$GCS_PRIVATE_KEY" \
   --build-arg SEOBOT_API_KEY="$SEOBOT_API_KEY" \
-  --build-arg NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" \
   .
 
 # Create environment variables string

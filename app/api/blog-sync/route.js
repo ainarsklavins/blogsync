@@ -324,6 +324,59 @@ async function processArticleBatch(articles, client, existingArticles, forceSync
                     });
 
                     if (savedArticle) {
+                        // Create the "en" version in ArticleTranslation
+                        try {
+                            console.log(`📝 [BlogSync] Creating 'en' ArticleTranslation for ${savedArticle.id}`);
+                            await prisma.articleTranslation.upsert({
+                                where: { articleId_language: { articleId: savedArticle.id, language: "en" } },
+                                update: {
+                                    headline: savedArticle.headline,
+                                    metaDescription: savedArticle.metaDescription,
+                                    metaKeywords: savedArticle.metaKeywords,
+                                    html: savedArticle.html,
+                                    markdown: savedArticle.markdown,
+                                    outline: savedArticle.outline,
+                                    published: savedArticle.published,
+                                    publishedAt: savedArticle.publishedAt,
+                                    image: savedArticle.image,
+                                    myImageUrl: savedArticle.myImageUrl,
+                                    tags: savedArticle.tags,
+                                    category: savedArticle.category,
+                                    readingTime: savedArticle.readingTime,
+                                    blog: savedArticle.blog,
+                                    relatedPosts: savedArticle.relatedPosts,
+                                    slug: savedArticle.slug, // Assuming slug remains the same for 'en'
+                                    status: "translated", // Changed from ORIGINAL_CONTENT
+                                    updatedAt: new Date(),
+                                },
+                                create: {
+                                    articleId: savedArticle.id,
+                                    language: "en",
+                                    headline: savedArticle.headline,
+                                    metaDescription: savedArticle.metaDescription,
+                                    metaKeywords: savedArticle.metaKeywords,
+                                    html: savedArticle.html,
+                                    markdown: savedArticle.markdown,
+                                    outline: savedArticle.outline,
+                                    published: savedArticle.published,
+                                    publishedAt: savedArticle.publishedAt,
+                                    image: savedArticle.image,
+                                    myImageUrl: savedArticle.myImageUrl,
+                                    tags: savedArticle.tags,
+                                    category: savedArticle.category,
+                                    readingTime: savedArticle.readingTime,
+                                    blog: savedArticle.blog,
+                                    relatedPosts: savedArticle.relatedPosts,
+                                    slug: savedArticle.slug, // Assuming slug remains the same for 'en'
+                                    status: "translated", // Changed from ORIGINAL_CONTENT
+                                },
+                            });
+                            console.log(`✅ [BlogSync] Successfully created/updated 'en' ArticleTranslation for ${savedArticle.id}`);
+                        } catch (translationError) {
+                            console.error(`❌ [BlogSync] Error creating/updating 'en' ArticleTranslation for ${savedArticle.id}:`, translationError);
+                            // Decide if this error should prevent further translations or be logged and ignored
+                        }
+
                         console.log(`🔵 [BlogSync] Starting translations for article ${savedArticle.id} (${savedArticle.headline})...`);
                         await translateArticleToAllLanguages(savedArticle);
                         console.log(`🟢 [BlogSync] Finished all translations for article ${savedArticle.id}.`);
